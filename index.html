@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<script src="http://d3js.org/d3.v3.min.js"></script>
+<script src="http://d3js.org/topojson.v1.js"></script>
+<script src="http://d3js.org/queue.v1.min.js"></script>
+<script src='http://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js'></script>
+<style type="text/css">
+body {
+	font-family: Arial, sans-serif;
+}
+.state {
+	fill: #ffffff;
+	stroke: #bdbdbd;
+	stroke-width: 0.5px;
+}
+#container {
+	margin:2%;
+	padding:20px;
+	border:2px solid #d0d0d0;
+	border-radius: 5px;
+}
+div.tooltip {
+	position: absolute;
+	text-align: center;
+	padding: 0.5em;
+	font-size: 10px;
+	color: #222;
+	background: #FFF;
+	border-radius: 2px;
+	pointer-events: none;
+	box-shadow: 0px 0px 2px 0px #a6a6a6;
+	text-shadow:#f5f5f5 0 1px 0;
+}
+.legend .legend-title {
+	text-align: left;
+	margin-bottom: 5px;
+	font-weight: bold;
+	font-size: 90%;
+}
+.legend .legend-scale ul {
+	margin: 0;
+	margin-bottom: 5px;
+	padding: 0;
+	float: left;
+	list-style: none;
+}
+.legend .legend-scale ul li {
+	font-size: 80%;
+	list-style: none;
+	margin-left: 0;
+	line-height: 18px;
+	margin-bottom: 2px;
+}
+.legend ul.legend-labels li span {
+	display: block;
+	float: left;
+	height: 20px;
+	width: 20px;
+	margin-right: 5px;
+	margin-left: 0;
+}
+.legend .legend-source {
+	font-size: 70%;
+	color: #999;
+	clear: both;
+}
+.axis {
+	font: 10px sans-serif;
+}
+.axis path, .axis line {
+	fill: none;
+	stroke: #000;
+	shape-rendering: crispEdges;
+}
+</style>
+</head>
+<body onLoad="sizeChange()">
+<div id="container">
+  <h1>Air Quality</h1>
+  <div class='legend'>
+    <div class='legend-title'>SO2</div>
+    <div class='legend-scale'> </div>
+    <div class='legend-source'><a>Details of the state</a></div>
+  </div>
+</div>
+<script type="text/javascript">
+
+       d3.select(window).on("resize", sizeChange);
+
+
+var margin = {top: 100, right: 20, bottom: 30, left: 400},
+    width = 2,
+    height = 300 - margin.top - margin.bottom;
+
+var x = d3.scale.ordinal().rangeRoundBands([0, width], .05);
+
+var y = d3.scale.linear().range([height, 0]);
+
+var xAxis = d3.svg.axis()
+    .scale(x)
+    .orient("bottom");
+ 
+
+var yAxis = d3.svg.axis()
+    .scale(y)
+    .orient("left")
+    .ticks(10);
+	
+	
+	var svg = d3.select("body").append("svg")
+    .attr("width", width + margin.left + margin.right)
+    .attr("height", height + margin.top + margin.bottom)
+  .append("g")
+    .attr("transform", 
+          "translate(" + margin.left + "," + margin.top + ")");
+
+
+
+
+        //Set d3 scale
+        var color_domain = ['0','10','20','30'];
+        var legend_labels = ['<10','10-20','>20'];
+        var color = d3.scale.threshold()
+          .domain(color_domain)
+          .range(["#000000","#ffffff", "#09C34D","#D4110C"]);
+
+        //Set tooltip
+        var div = d3.select("body").append("div")
+         .attr("class", "tooltip")
+         .style("opacity", 0);
+
+        //Set d3 projection, path and svg
+        var projection = d3.geo.mercator()
+            .center([78, 27])
+            .scale(1200);
+
+        var path = d3.geo.path()
+            .projection(projection);
+
+        var svg = d3.select("#container")
+          .append("svg")
+          .attr("width", "100%")
+          .attr("height","100%")
+          .append("g");
+
+        //Wait for data files to download before drawing
+        queue()
+        
+          .defer(d3.json, "india_state_2014_simplified.topojson")
+          .defer(d3.csv, "air_quality_2011_states.csv") //sample data
+          .await(ready);
+
+        function ready(error, state, data) {
+
+          //Set up for visualizing sample data
+          var pairResultWithId = {};
+          var pairNameWithId = {};
+		  var pairNoWithId = {};
+          data.forEach(function(d) {
+            pairResultWithId[d.ST_NAME] = d.annavgSO2;
+            pairNameWithId[d.ST_NAME] = d.State;
+			pairNoWithId[d.ST_NAME] = +d.annavgNO2;
+			});
+
+
+          //Drawing state boundaries          
+          var state_geojson = topojson.feature(state, state.objects.india_state_2014);
+          svg.selectAll(".state")
+              .data(state_geojson.features)
+              .enter().append("path")
+              .attr("class", "state")
+              .attr("d", path)
+			  .style ( "fill" , function (d) {
+                var result = pairResultWithId[d.properties.ST_NAME];
+                if (result!='') {return color(result);}
+                                              })
+              .style("opacity", 0.8)
+              .on("mouseover", function(d) {
+                 d3.select(this).transition().duration(300).style("opacity", 1);
+                 div.transition().duration(300)
+                 .style("opacity", 1)
+                 div.text(pairNameWithId[d.properties.ST_NAME ] + " : " + pairResultWithId[d.properties.ST_NAME])
+                 .style("left", (d3.event.pageX) + "px")
+                 .style("top", (d3.event.pageY -30) + "px");
+				 
+				 x.domain(state_geojson.features.map(function(d) { return pairNameWithId[d.properties.ST_NAME]; }));
+                 y.domain([0, d3.max(state_geojson.features, function(d) { return pairNoWithId[d.properties.ST_NAME]; })]);
+  
+  
+              })
+              .on("mouseout", function() {
+                 d3.select(this)
+                 .transition().duration(300)
+                 .style("opacity", 0.8);
+                 div.transition().duration(300)
+                 .style("opacity", 0);
+              })
+			  
+			  
+			  
+			  
+			  
+			  
+			  
+			   
+			
+	//bar chart svg		
+  svg.append("g")
+      .attr("class", "x axis")
+      .attr("transform", "translate(0," + height + ")")
+      .call(xAxis)
+    .selectAll("text")
+      .style("text-anchor", "end")
+      .attr("dx", "-.8em")
+      .attr("dy", "-.55em")
+      .attr("transform", "rotate(-90)" )
+
+  svg.append("g")
+      .attr("class", "y axis")
+      .call(yAxis)
+    .append("text")
+      .attr("transform", "rotate(-90)")
+      .attr("y", 6)
+      .attr("dy", ".71em")
+      .style("text-anchor", "end")
+
+ 
+	svg.selectAll("bar")
+      .data(state_geojson.features)
+    .enter().append("rect")
+      .style("fill", "steelblue")
+	  .attr("id","chart")
+      .attr("x", function(d) { return x(pairNameWithId[d.properties.ST_NAME]); })
+      .attr("width", x.rangeBand())
+      .attr("y", function(d) { return y(pairNoWithId[d.properties.ST_NAME]); })
+      .attr("height", function(d) { return height - y(pairNoWithId[d.properties.ST_NAME]); });
+    
+			  
+			
+			
+
+			  
+			  
+			  
+			  
+			  
+        }
+
+        //Set up for drawing html legend elements
+        var legend = d3.select('.legend-scale')
+          .append('ul')
+          .attr('class', 'legend-labels');
+
+        var keys = legend.selectAll('li')
+          .data(color_domain);
+
+        keys.enter().append('li')
+          .text(function(d, i){ return legend_labels[i];})
+          .append('span')
+          .style('background', function(d) { return color(d); })
+          ;
+
+        //Function called when window is resized
+        function sizeChange() {
+          d3.select("g").attr("transform", "scale(" + $("#container").width()/1000 + ")");
+          $("svg").height($("#container").width()*0.75);
+        }
+
+
+
+      </script>
+</body>
+</html>
